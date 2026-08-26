@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS workflows (
     name VARCHAR(160) NOT NULL,
     description VARCHAR(2000),
     config VARCHAR(4000),
+    definition CLOB,
     status VARCHAR(20) NOT NULL DEFAULT 'draft',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -42,6 +43,7 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
     started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     finished_at TIMESTAMP,
     logs CLOB,
+    node_results CLOB,
     CONSTRAINT fk_run_workflow FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
 );
 

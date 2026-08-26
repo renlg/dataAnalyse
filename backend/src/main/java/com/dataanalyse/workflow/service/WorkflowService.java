@@ -23,18 +23,62 @@ public class WorkflowService {
     @Transactional public List<Map<String,Object>> replaceNodes(Long id,List<Map<String,Object>> body){getEntity(id);Set<String> keys=new HashSet<>();List<WorkflowNodeEntity> saved=new ArrayList<>();
         for(Map<String,Object> item:body){String key=str(item.get("nodeKey")),type=str(item.get("nodeType"));if(key==null||key.isBlank()||!keys.add(key))throw new BusinessException(400,"节点标识不能为空且不能重复");if(!TYPES.contains(type))throw new BusinessException(400,"不支持的节点类型："+type);Map<String,Object> config=map(item.get("config"));
             WorkflowNodeEntity n=new WorkflowNodeEntity();n.setWorkflowId(id);n.setNodeKey(key);n.setNodeType(type);n.setName(Optional.ofNullable(str(item.get("name"))).orElse(type));n.setPositionX(number(item.get("positionX")));n.setPositionY(number(item.get("positionY")));try{n.setConfigJson(mapper.writeValueAsString(config));}catch(Exception e){throw new BusinessException(400,"节点配置无法序列化");}saved.add(n);}
-        nodes.deleteByWorkflowId(id);nodes.flush();nodes.saveAll(saved);return getNodes(id);
+        // JSON 存储：整流程节点写入 workflows.definition，废弃 workflow_nodes 表
+        WorkflowEntity w=getEntity(id);w.setDefinition(serializeDefinition(saved));workflows.save(w);return getNodes(id);
     }
-    public List<Map<String,Object>> getNodes(Long id){getEntity(id);return nodes.findByWorkflowIdOrderById(id).stream().map(this::nodeView).toList();}
-    public List<WorkflowNodeEntity> getNodeEntities(Long id){return nodes.findByWorkflowIdOrderById(id);}
+    public List<Map<String,Object>> getNodes(Long id){return getNodeEntities(id).stream().map(this::nodeView).toList();}
+    public List<WorkflowNodeEntity> getNodeEntities(Long id){WorkflowEntity w=getEntity(id);List<WorkflowNodeEntity> fromDef=parseDefinition(w);if(!fromDef.isEmpty())return fromDef;return nodes.findByWorkflowIdOrderById(id);}
+    /** 把节点列表序列化成 definition JSON（config 内含 _outgoing 连线） */
+    private String serializeDefinition(List<WorkflowNodeEntity> list){
+        try{
+            List<Map<String,Object>> arr=new ArrayList<>();
+            for(WorkflowNodeEntity n:list){Map<String,Object> m=new LinkedHashMap<>();m.put("nodeKey",n.getNodeKey());m.put("nodeType",n.getNodeType());m.put("name",n.getName());m.put("positionX",n.getPositionX());m.put("positionY",n.getPositionY());m.put("config",parseConfig(n));arr.add(m);}
+            Map<String,Object> def=new LinkedHashMap<>();def.put("nodes",arr);return mapper.writeValueAsString(def);
+        }catch(Exception e){throw new BusinessException(500,"工作流定义序列化失败");}
+    }
+    /** 从 definition JSON 解析节点列表；无 definition 返回空 */
+    private List<WorkflowNodeEntity> parseDefinition(WorkflowEntity w){
+        if(w.getDefinition()==null||w.getDefinition().isBlank())return List.of();
+        try{
+            Map<String,Object> def=mapper.readValue(w.getDefinition(),new TypeReference<Map<String,Object>>(){});
+            Object nodesObj=def.get("nodes");
+            if(!(nodesObj instanceof List<?> list))return List.of();
+            List<WorkflowNodeEntity> out=new ArrayList<>();
+            for(Object o:list){if(!(o instanceof Map<?,?> mm))continue;Map<String,Object> m=(Map<String,Object>)mm;WorkflowNodeEntity n=new WorkflowNodeEntity();n.setWorkflowId(w.getId());n.setNodeKey(str(m.get("nodeKey")));n.setNodeType(str(m.get("nodeType")));n.setName(str(m.get("name")));n.setPositionX(number(m.get("positionX")));n.setPositionY(number(m.get("positionY")));Object cfg=m.get("config");try{n.setConfigJson(cfg==null?"{}":mapper.writeValueAsString(cfg));}catch(Exception ignored){}out.add(n);}
+            return out;
+        }catch(Exception e){return List.of();}
+    }
     public List<Map<String,Object>> getRuns(Long id){getEntity(id);return runs.findByWorkflowIdOrderByStartedAtDesc(id).stream().map(this::runView).toList();}
+    public List<Map<String,Object>> listRuns(Long workflowId){
+        List<WorkflowRunEntity> all = workflowId==null ? runs.findAllByOrderByStartedAtDesc() : runs.findByWorkflowIdOrderByStartedAtDesc(workflowId);
+        return all.stream().map(this::runView).toList();
+    }
     public Map<String,Object> getRun(Long id){return runView(runs.findById(id).orElseThrow(()->new BusinessException(404,"运行记录不存在")));}
     public WorkflowEntity getEntity(Long id){return workflows.findById(id).orElseThrow(()->new BusinessException(404,"工作流不存在"));}
     public Map<String,Object> parseConfig(WorkflowNodeEntity n){try{return mapper.readValue(Optional.ofNullable(n.getConfigJson()).orElse("{}"),new TypeReference<>(){});}catch(Exception e){throw new BusinessException(500,"节点配置解析失败");}}
     public Map<String,Object> getWorkflowConfig(Long id){return parseWorkflowConfig(getEntity(id));}
     private Map<String,Object> parseWorkflowConfig(WorkflowEntity w){try{return mapper.readValue(Optional.ofNullable(w.getConfig()).orElse("{}"),new TypeReference<>(){});}catch(Exception e){return new LinkedHashMap<>();}}
-    private Map<String,Object> summary(WorkflowEntity w){Map<String,Object> m=new LinkedHashMap<>();m.put("id",w.getId());m.put("name",w.getName());m.put("status",w.getStatus());m.put("nodeCount",w.getId()==null?0:nodes.countByWorkflowId(w.getId()));m.put("createdAt",w.getCreatedAt());m.put("updatedAt",w.getUpdatedAt());return m;}
+    private Map<String,Object> summary(WorkflowEntity w){Map<String,Object> m=new LinkedHashMap<>();m.put("id",w.getId());m.put("name",w.getName());m.put("status",w.getStatus());m.put("nodeCount",getNodeEntities(w.getId()).size());m.put("createdAt",w.getCreatedAt());m.put("updatedAt",w.getUpdatedAt());return m;}
     private Map<String,Object> nodeView(WorkflowNodeEntity n){Map<String,Object> m=new LinkedHashMap<>();m.put("id",n.getId());m.put("nodeKey",n.getNodeKey());m.put("nodeType",n.getNodeType());m.put("name",n.getName());m.put("positionX",n.getPositionX());m.put("positionY",n.getPositionY());m.put("config",parseConfig(n));return m;}
-    private Map<String,Object> runView(WorkflowRunEntity r){Map<String,Object> m=new LinkedHashMap<>();m.put("id",r.getId());m.put("workflowId",r.getWorkflowId());m.put("status",r.getStatus());m.put("startedAt",r.getStartedAt());m.put("finishedAt",r.getFinishedAt());m.put("logs",r.getLogs());return m;}
+    private Map<String,Object> runView(WorkflowRunEntity r){Map<String,Object> m=new LinkedHashMap<>();m.put("id",r.getId());m.put("workflowId",r.getWorkflowId());m.put("workflowName",workflows.findById(r.getWorkflowId()).map(WorkflowEntity::getName).orElse(null));m.put("status",r.getStatus());m.put("startedAt",r.getStartedAt());m.put("finishedAt",r.getFinishedAt());m.put("logs",r.getLogs());m.put("nodeResults",nodeResultsView(r));return m;}
+    /** 解析运行时的节点结果(nodeKey->output), 补上节点名/类型, 供前端表格展示 */
+    private List<Map<String,Object>> nodeResultsView(WorkflowRunEntity r){
+        List<Map<String,Object>> list=new ArrayList<>();
+        if(r.getNodeResults()==null||r.getNodeResults().isBlank()) return list;
+        try{
+            Map<String,WorkflowNodeEntity> nodeMap=getNodeEntities(r.getWorkflowId()).stream().collect(java.util.stream.Collectors.toMap(WorkflowNodeEntity::getNodeKey,(WorkflowNodeEntity n)->n,(a,b)->a));
+            @SuppressWarnings("unchecked") Map<String,Object> raw=mapper.readValue(r.getNodeResults(),new TypeReference<Map<String,Object>>(){});
+            for(Map.Entry<String,Object> e:raw.entrySet()){
+                WorkflowNodeEntity node=nodeMap.get(e.getKey());
+                Map<String,Object> row=new LinkedHashMap<>();
+                row.put("nodeKey",e.getKey());
+                row.put("nodeName",node!=null?node.getName():e.getKey());
+                row.put("nodeType",node!=null?node.getNodeType():null);
+                row.put("output",e.getValue());
+                list.add(row);
+            }
+        }catch(Exception ignored){}
+        return list;
+    }
     @SuppressWarnings("unchecked") private Map<String,Object> map(Object o){return o instanceof Map<?,?>?(Map<String,Object>)o:new LinkedHashMap<>();}private String str(Object o){return o==null?null:String.valueOf(o);}private Double number(Object o){return o==null?0d:Double.valueOf(String.valueOf(o));}
 }
