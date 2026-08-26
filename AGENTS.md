@@ -67,6 +67,7 @@ Management tables:
 4. `workflow_runs` — id, workflow_id, status (running|success|failed), started_at, finished_at, logs (TEXT)
 5. `users` — id, username (unique), password_hash, created_at
 6. `auth_tokens` — token (PK), username, created_at, expires_at
+7. `api_keys` — id, name (unique), type (llm|taiwei), base_url, api_key, model, remark, created_at
 
 ## Core Requirements
 
@@ -139,7 +140,17 @@ The "新建" button on the analysis list page opens a new page that is a **visua
 - Guard against duplicate registrations (cancel previous task for the same workflow id before registering anew). Wrap registration in try/catch — invalid cron must not crash startup.
 - Expose `GET /api/workflows/{id}/schedule` → current cron + next fire time (for display).
 
-### 6. Result API & Errors
+### 7. API Key 管理 (API Key Management) — ADDED 2026-08-26
+
+Centralized management of LLM / taiwei API keys so workflow nodes can pick a saved key from a dropdown instead of typing baseUrl/apiKey by hand.
+
+- **表**: extend metadata schema with `api_keys` — `id`, `name` (unique, e.g. "deepseek主key"), `type` (llm|taiwei), `base_url`, `api_key` (encrypted, AES same as data source passwords), `model`, `remark`, `created_at`. Never return the raw api_key to the client — mask as `***`.
+- **REST CRUD**: `GET/POST/PUT/DELETE /api/keys` (admin-authenticated like everything else). Fields: name, type, baseUrl, apiKey (write-only), model, remark.
+- **节点引用**: workflow node `config` gains optional `apiKeyId`. When a taiwei/llm node has `apiKeyId` set, the engine resolves the saved key (decrypt api_key) at execution time to fill `baseUrl`/`apiKey`/`model` (node-level explicit values still take precedence for model/baseUrl). The node form still shows a manual baseUrl/apiKey/model as fallback.
+- **前端**: new menu 菜单项 "API Key 管理" → page with a table (name/type/baseUrl/model/createdAt) + 新建/编辑/删除. In the workflow editor's taiwei/llm node config panel, add an "API 配置" Select at the top — options come from `GET /api/keys`; on select, the baseUrl/apiKey/model fields auto-fill from the chosen key (apiKey field shows masked, engine uses the real saved one). Selecting "手动配置" keeps manual input.
+- Add `GET /api/keys/options` returning lightweight `[{id,name,type,baseUrl,model}]` (no api_key) for dropdowns.
+
+### 8. Result API & Errors
 
 - All REST responses: `{"code": 0, "message": "ok", "data": ...}` wrapper. Business errors: `{"code": 4xx/5xx, "message": "<中文错误信息>", "data": null}`.
 - Global exception handler (`@RestControllerAdvice`) maps exceptions to Chinese messages.
