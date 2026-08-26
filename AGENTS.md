@@ -65,8 +65,20 @@ Management tables:
 2. `workflows` — id, name, description, status (draft|active|disabled), created_at, updated_at
 3. `workflow_nodes` — id, workflow_id, node_key (unique within a workflow), node_type (start|end|taiwei|llm|h2sql|sqlitesql), name, position_x, position_y, config_json (TEXT), created_at
 4. `workflow_runs` — id, workflow_id, status (running|success|failed), started_at, finished_at, logs (TEXT)
+5. `users` — id, username (unique), password_hash, created_at
+6. `auth_tokens` — token (PK), username, created_at, expires_at
 
 ## Core Requirements
+
+### 0. 登录认证 (Login / Authentication) — ADDED 2026-08-26
+
+The platform requires a login page and token-based authentication before any feature can be used.
+
+- **用户表**: extend the metadata schema with a `users` table — `id`, `username` (unique), `password_hash` (BCrypt), `created_at`. Seed one default admin account on startup if no user exists: username `admin`, password `admin123` (overridable via env `DATA_ANALYSE_ADMIN_PASSWORD`, and via env `DATA_ANALYSE_ADMIN_USERNAME`). Do NOT store plaintext passwords.
+- **登录接口**: `POST /api/auth/login` `{username, password}` → `{"code":0,"message":"ok","data":{"token":"<random 32-hex>","username":"admin"}}`; wrong credentials → 401 with Chinese message `用户名或密码错误`. Optionally support `POST /api/auth/logout` to invalidate the token.
+- **Token 持久化**: keep a `auth_tokens` table (`token`, `username`, `created_at`, `expires_at`, 7-day expiry) so a restart does NOT log the user out. On startup, expired tokens are cleaned.
+- **鉴权拦截器**: a `HandlerInterceptor` guards all `/api/**` except `/api/auth/login` (and health if present). Accepts `Authorization: Bearer <token>`; missing/invalid/expired → 401 `未登录或登录已过期`. Static resources (web/dist) are NOT guarded.
+- **前端登录页**: route `/login` — centered Ant Design card with username + password inputs, submit button, loading state, error message. On app load, call a `GET /api/auth/me` (returns current username from token) — if it 401s, redirect to `/login`. After login, store the token in localStorage and attach `Authorization: Bearer <token>` on every axios request (request interceptor); on any 401 response, clear the token and redirect to `/login`. Add a logout button in the layout header.
 
 ### 1. 数据源管理 (Data Source Management)
 
