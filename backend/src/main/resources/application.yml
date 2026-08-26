@@ -19,3 +19,6 @@ spring:
     time-zone: Asia/Shanghai
 dataanalyse:
   secret: ${DATA_ANALYSE_SECRET:dataAnalyse-dev-secret-change-me}
+  admin:
+    username: ${DATA_ANALYSE_ADMIN_USERNAME:admin}
+    password: ${DATA_ANALYSE_ADMIN_PASSWORD:admin123}
