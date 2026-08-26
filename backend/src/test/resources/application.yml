@@ -1,0 +1,13 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:dataanalyse-test;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: none
+  sql:
+    init:
+      mode: always
+dataanalyse:
+  secret: test-secret
