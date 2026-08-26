@@ -17,7 +17,11 @@ public class WebMvcConfig implements WebMvcConfigurer {
         this.objectMapper = objectMapper;
     }
     @Override public void addCorsMappings(CorsRegistry registry) {
-        registry.addMapping("/api/**").allowedOrigins("http://localhost:5173").allowedMethods("*").allowedHeaders("*");
+        registry.addMapping("/api/**")
+                .allowedOriginPatterns("*")
+                .allowedMethods("*")
+                .allowedHeaders("*")
+                .allowCredentials(false);
     }
     @Override public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(new AuthInterceptor(authService, objectMapper))
