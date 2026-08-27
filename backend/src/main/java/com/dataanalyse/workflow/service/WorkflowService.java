@@ -12,7 +12,7 @@ import java.util.*;
 
 @Service
 public class WorkflowService {
-    private static final Set<String> TYPES=Set.of("start","end","taiwei","llm","h2sql","sqlitesql","python");
+    private static final Set<String> TYPES=Set.of("start","end","condition","taiwei","llm","h2sql","sqlitesql","python");
     private static final Set<String> STATUSES=Set.of("draft","active","disabled");
     private final WorkflowRepository workflows; private final WorkflowNodeRepository nodes; private final WorkflowRunRepository runs; private final ObjectMapper mapper;
     public WorkflowService(WorkflowRepository w,WorkflowNodeRepository n,WorkflowRunRepository r,ObjectMapper m){workflows=w;nodes=n;runs=r;mapper=m;}
