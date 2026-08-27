@@ -10,6 +10,11 @@ import com.dataanalyse.workflow.entity.WorkflowNodeEntity;
 import com.dataanalyse.workflow.service.WorkflowService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import java.util.*;
 
 @Component
@@ -31,10 +36,48 @@ public class WorkflowEngine {
     private Object executeNode(WorkflowNodeEntity node,Object input,Object trigger,Map<String,Object> contextParams,Map<String,Object> nodeContext){Map<String,Object> c=workflowService.parseConfig(node);String inputText=toText(input);return switch(node.getNodeType()){
         case "start" -> trigger;
         case "end" -> {String output=str(c.get("output"));yield output==null||output.isBlank()?input:render(output,inputText,contextParams,nodeContext);}
-        case "taiwei" -> {Map<String,Object> rc=resolveLlmConfig(c);yield llm.chat(str(rc.get("baseUrl")),str(rc.get("apiKey")),str(rc.get("model")),List.of(Map.of("role","system","content",render(str(c.get("prompt")),inputText,contextParams,nodeContext))));}
-        case "llm" -> {Map<String,Object> rc=resolveLlmConfig(c);yield llm.chat(str(rc.get("baseUrl")),str(rc.get("apiKey")),str(rc.get("model")),List.of(Map.of("role","system","content",render(str(c.get("systemPrompt")),inputText,contextParams,nodeContext)),Map.of("role","user","content",render(str(c.get("userPrompt")),inputText,contextParams,nodeContext))));}
+        case "taiwei" -> {Map<String,Object> rc=resolveLlmConfig(c);yield callLlmWithRetry(()->llm.chat(str(rc.get("baseUrl")),str(rc.get("apiKey")),str(rc.get("model")),List.of(Map.of("role","system","content",render(str(c.get("prompt")),inputText,contextParams,nodeContext)))),retryCount(c));}
+        case "llm" -> {Map<String,Object> rc=resolveLlmConfig(c);yield callLlmWithRetry(()->llm.chat(str(rc.get("baseUrl")),str(rc.get("apiKey")),str(rc.get("model")),List.of(Map.of("role","system","content",render(str(c.get("systemPrompt")),inputText,contextParams,nodeContext)),Map.of("role","user","content",render(str(c.get("userPrompt")),inputText,contextParams,nodeContext)))),retryCount(c));}
         case "h2sql","sqlitesql" -> {Object ds=c.get("dataSourceId");if(ds==null)throw new BusinessException(400,"SQL 节点未选择数据源");yield dataSources.queryForWorkflow(Long.valueOf(String.valueOf(ds)),"h2sql".equals(node.getNodeType())?"h2":"sqlite",render(str(c.get("sql")),inputText,contextParams,nodeContext));}
+        case "python" -> executePython(str(c.get("code")),input,contextParams,nodeContext);
         default -> throw new BusinessException(400,"未知节点类型");};}
+    private String callLlmWithRetry(Supplier<String> call,int retryCount){
+        for(int attempt=0;;attempt++){
+            try{return call.get();}
+            catch(RuntimeException e){
+                if(e instanceof BusinessException business&&business.getCode()==400)throw e;
+                if(attempt>=retryCount)throw e;
+                try{Thread.sleep(1000);}catch(InterruptedException interrupted){Thread.currentThread().interrupt();throw new BusinessException(500,"模型调用重试被中断");}
+            }
+        }
+    }
+    private int retryCount(Map<String,Object> config){
+        Object value=config.get("retryCount");if(value==null||String.valueOf(value).isBlank())return 3;
+        try{int count=Integer.parseInt(String.valueOf(value));if(count<0)throw new NumberFormatException();return count;}catch(NumberFormatException e){throw new BusinessException(400,"重试次数必须是大于等于 0 的整数");}
+    }
+    private Object executePython(String code,Object input,Map<String,Object> params,Map<String,Object> nodeContext){
+        if(code==null||code.isBlank())throw new BusinessException(400,"Python 代码不能为空");
+        Path stdout=null,stderr=null;Process process=null;
+        try{
+            Map<String,Object> context=new LinkedHashMap<>();context.put("input",input);context.put("params",params==null?Map.of():params);context.put("context",nodeContext==null?Map.of():nodeContext);
+            String contextJson=mapper.writeValueAsString(context);
+            String script="import json, sys\nctx = json.loads(sys.argv[1])\ninput = ctx.get('input')\nparams = ctx.get('params', {})\nnodeContext = ctx.get('context', {})\n"+code;
+            stdout=Files.createTempFile("dataanalyse-python-",".out");stderr=Files.createTempFile("dataanalyse-python-",".err");
+            process=new ProcessBuilder("python3","-c",script,contextJson).redirectOutput(stdout.toFile()).redirectError(stderr.toFile()).start();
+            if(!process.waitFor(30,TimeUnit.SECONDS)){
+                process.destroyForcibly();process.waitFor(5,TimeUnit.SECONDS);
+                throw new BusinessException(500,"Python 执行超时（30 秒）");
+            }
+            String output=Files.readString(stdout,StandardCharsets.UTF_8).stripTrailing();
+            String error=Files.readString(stderr,StandardCharsets.UTF_8).stripTrailing();
+            if(process.exitValue()!=0)throw new BusinessException(500,"Python 执行失败："+(error.isBlank()?"退出码 "+process.exitValue():error));
+            if(output.isBlank())return "";
+            try{return mapper.readValue(output,Object.class);}catch(Exception ignored){return output;}
+        }catch(BusinessException e){throw e;}
+        catch(InterruptedException e){Thread.currentThread().interrupt();if(process!=null)process.destroyForcibly();throw new BusinessException(500,"Python 执行被中断");}
+        catch(Exception e){if(process!=null)process.destroyForcibly();throw new BusinessException(500,"Python 执行失败："+e.getMessage());}
+        finally{try{if(stdout!=null)Files.deleteIfExists(stdout);}catch(Exception ignored){}try{if(stderr!=null)Files.deleteIfExists(stderr);}catch(Exception ignored){}}
+    }
     private Map<String,Object> resolveLlmConfig(Map<String,Object> c){
         String baseUrl=str(c.get("baseUrl")); String apiKey=str(c.get("apiKey")); String model=str(c.get("model"));
         Object apiKeyIdObj=c.get("apiKeyId");

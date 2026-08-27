@@ -2,7 +2,7 @@ import { Handle, NodeProps, Position } from '@xyflow/react'
 import { ClockCircleOutlined, CodeOutlined, RobotOutlined } from '@ant-design/icons'
 import { Tag } from 'antd'
 
-const meta:Record<string,{color:string;label:string;icon:React.ReactNode;circle?:boolean}>={start:{color:'#000',label:'开始',icon:<ClockCircleOutlined/>,circle:true},end:{color:'#000',label:'结束',icon:<ClockCircleOutlined/>,circle:true},taiwei:{color:'#8854d0',label:'taiwei',icon:<RobotOutlined/>},llm:{color:'#3867d6',label:'LLM',icon:<RobotOutlined/>},h2sql:{color:'#f7b731',label:'H2SQL',icon:<CodeOutlined/>},sqlitesql:{color:'#4b6584',label:'SQLiteSQL',icon:<CodeOutlined/>}}
+const meta:Record<string,{color:string;label:string;icon:React.ReactNode;circle?:boolean}>={start:{color:'#000',label:'开始',icon:<ClockCircleOutlined/>,circle:true},end:{color:'#000',label:'结束',icon:<ClockCircleOutlined/>,circle:true},taiwei:{color:'#8854d0',label:'taiwei',icon:<RobotOutlined/>},llm:{color:'#3867d6',label:'LLM',icon:<RobotOutlined/>},h2sql:{color:'#f7b731',label:'H2SQL',icon:<CodeOutlined/>},sqlitesql:{color:'#4b6584',label:'SQLiteSQL',icon:<CodeOutlined/>},python:{color:'#20bf6b',label:'运行 Python',icon:<CodeOutlined/>}}
 export default function WorkflowNode({data,selected}:NodeProps){const d=data as {nodeType:string;name:string;config:Record<string,unknown>},m=meta[d.nodeType]??meta.llm;
 if(d.nodeType==='start'||d.nodeType==='end'){
   const filled=d.nodeType==='end';
