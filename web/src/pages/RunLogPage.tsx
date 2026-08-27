@@ -1,5 +1,5 @@
-import { Table, Select, Space, Tag, Drawer, Typography, Button, message, Empty } from 'antd'
-import { ReloadOutlined } from '@ant-design/icons'
+import { Table, Select, Space, Tag, Drawer, Typography, Button, message, Empty, Popconfirm, Spin } from 'antd'
+import { ClearOutlined, ReloadOutlined } from '@ant-design/icons'
 import { useEffect, useState, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { workflowApi, WorkflowItem, RunItem } from '../api'
@@ -20,7 +20,19 @@ export default function RunLogPage() {
   const [flows, setFlows] = useState<WorkflowItem[]>([])
   const [wf, setWf] = useState<number | undefined>(urlWf ? Number(urlWf) : undefined)
   const [loading, setLoading] = useState(false)
+  const [cleaning, setCleaning] = useState(false)
   const [detail, setDetail] = useState<RunItem | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+
+  const openDetail = async (r: RunItem) => {
+    setDetailLoading(true)
+    setDetail(r)
+    try {
+      const full = await workflowApi.getRun(r.id)
+      setDetail(full)
+    } catch (e) { message.error((e as Error).message) }
+    setDetailLoading(false)
+  }
 
   const load = async () => {
     setLoading(true)
@@ -34,6 +46,16 @@ export default function RunLogPage() {
   useEffect(() => { workflowApi.list().then(setFlows).catch(() => {}) }, [])
   useEffect(() => { load() }, [wf])
 
+  const cleanupZombies = async () => {
+    setCleaning(true)
+    try {
+      const result = await workflowApi.cleanupZombies(30)
+      message.success(`已清理 ${result.cleaned} 条僵尸运行记录`)
+      await load()
+    } catch (e) { message.error((e as Error).message) }
+    setCleaning(false)
+  }
+
   const detailRows = useMemo(() => (detail?.nodeResults || []).map((n, i) => ({ ...n, key: i })), [detail])
 
   const columns = [
@@ -42,7 +64,7 @@ export default function RunLogPage() {
     { title: '状态', dataIndex: 'status', width: 90, render: (v: string) => <Tag color={statusColor[v] || 'default'}>{statusText[v] || v}</Tag> },
     { title: '开始时间', dataIndex: 'startedAt', width: 170, render: (v: string) => v ? new Date(v).toLocaleString() : '-' },
     { title: '日志', dataIndex: 'logs', ellipsis: true, render: (v: string) => <Typography.Text type="secondary" ellipsis={{ tooltip: v }} style={{ maxWidth: 360 }}>{v || '-'}</Typography.Text> },
-    { title: '操作', width: 80, render: (_: unknown, r: RunItem) => <Button size="small" type="link" onClick={() => setDetail(r)}>详情</Button> },
+    { title: '操作', width: 80, render: (_: unknown, r: RunItem) => <Button size="small" type="link" onClick={() => openDetail(r)}>详情</Button> },
   ]
 
   return (
@@ -57,11 +79,16 @@ export default function RunLogPage() {
           />
           {urlWf && <Typography.Text type="secondary">已按当前流程筛选</Typography.Text>}
         </Space>
-        <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>刷新</Button>
+        <Space>
+          <Popconfirm title="清理僵尸运行记录" description="将超过 30 分钟且当前无活动任务的运行中记录标记为失败，是否继续？" onConfirm={cleanupZombies} okText="清理" cancelText="取消">
+            <Button danger icon={<ClearOutlined />} loading={cleaning}>清理僵尸</Button>
+          </Popconfirm>
+          <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>刷新</Button>
+        </Space>
       </div>
       <Table size="small" rowKey="id" loading={loading} columns={columns} dataSource={runs} pagination={{ pageSize: 20, showTotal: (t: number) => `共 ${t} 条` }} />
       <Drawer title={`运行详情 #${detail?.id ?? ''}${detail?.workflowName ? ' · ' + detail.workflowName : ''}`} width={720} open={!!detail} onClose={() => setDetail(null)}>
-        {detail && (
+        {detail && detailLoading ? <Spin /> : detail && (
           <>
             <Space style={{ marginBottom: 16 }} wrap>
               <Tag color={statusColor[detail.status] || 'default'}>{statusText[detail.status] || detail.status}</Tag>
