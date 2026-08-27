@@ -63,7 +63,7 @@ export default function RunLogPage() {
     { title: '流程', dataIndex: 'workflowName', width: 140, render: (v: string) => v || '-' },
     { title: '状态', dataIndex: 'status', width: 90, render: (v: string) => <Tag color={statusColor[v] || 'default'}>{statusText[v] || v}</Tag> },
     { title: '开始时间', dataIndex: 'startedAt', width: 170, render: (v: string) => v ? new Date(v).toLocaleString() : '-' },
-    { title: '日志', dataIndex: 'logs', ellipsis: true, render: (v: string) => <Typography.Text type="secondary" ellipsis={{ tooltip: v }} style={{ maxWidth: 360 }}>{v || '-'}</Typography.Text> },
+    { title: '结束时间', dataIndex: 'finishedAt', width: 170, render: (v: string) => v ? new Date(v).toLocaleString() : '-' },
     { title: '操作', width: 80, render: (_: unknown, r: RunItem) => <Button size="small" type="link" onClick={() => openDetail(r)}>详情</Button> },
   ]
 
