@@ -29,8 +29,8 @@ public class WorkflowEngine {
         Deque<String> ready=new ArrayDeque<>();indegree.forEach((k,v)->{if(v==0)ready.add(k);});Map<String,Object> results=new LinkedHashMap<>();
         // 节点名称→输出 的共享上下文，下游节点可用 ${节点名称} 引用任意前序节点输出
         Map<String,Object> nodeContext=new LinkedHashMap<>();
-        List<String> logs=new ArrayList<>();int visited=0;
-        while(!ready.isEmpty()){String key=ready.remove();WorkflowNodeEntity node=byKey.get(key);List<Object> inputs=predecessorInputs(key,outgoing,results);Object input=inputs.size()==1?inputs.get(0):inputs;Object output=executeNode(node,input,trigger,contextParams,nodeContext);results.put(key,output);nodeContext.put(node.getName(),output);logs.add("节点 ["+node.getName()+"] 执行成功："+shortText(output));visited++;for(String next:outgoing.getOrDefault(key,List.of())){int left=indegree.compute(next,(k,v)->v-1);if(left==0)ready.add(next);}}
+        List<String> logs=new ArrayList<>();int visited=0;Set<String> skipped=new HashSet<>();
+        while(!ready.isEmpty()){String key=ready.remove();if(skipped.contains(key)){visited++;continue;}WorkflowNodeEntity node=byKey.get(key);List<Object> inputs=predecessorInputs(key,outgoing,results);Object input=inputs.size()==1?inputs.get(0):inputs;Object output=executeNode(node,input,trigger,contextParams,nodeContext);results.put(key,output);nodeContext.put(node.getName(),output);logs.add("节点 ["+node.getName()+"] 执行成功："+shortText(output));visited++;List<String> targets=outgoing.getOrDefault(key,List.of());String emptyTo=str(workflowService.parseConfig(node).get("emptyTo"));if(emptyTo!=null&&!emptyTo.isBlank()&&isEmptyOutput(output)){if(!byKey.containsKey(emptyTo))throw new BusinessException(400,"emptyTo 目标节点不存在："+emptyTo);if(!targets.contains(emptyTo)){targets=new ArrayList<>(targets);targets.add(emptyTo);}for(String t:targets){if(t.equals(emptyTo)){indegree.put(emptyTo,0);ready.add(emptyTo);}else{skipped.add(t);indegree.put(t,0);ready.add(t);for(String desc:outgoing.getOrDefault(t,List.of()))if(!desc.equals(emptyTo))skipped.add(desc);}}logs.add("节点 ["+node.getName()+"] 输出为空，按 emptyTo 跳转到 ["+emptyTo+"]，跳过原下游 "+targets.stream().filter(t->!t.equals(emptyTo)).toList());continue;}for(String next:targets){int left=indegree.compute(next,(k,v)->v-1);if(left==0)ready.add(next);}}
         if(visited!=nodes.size())throw new BusinessException(400,"工作流存在循环，无法执行");Object overall=null;for(WorkflowNodeEntity n:nodes)if("end".equals(n.getNodeType()))overall=results.get(n.getNodeKey());if(overall==null&&!results.isEmpty())overall=new ArrayList<>(results.values()).get(results.size()-1);return new ExecutionResult(overall,String.join("\n",logs),results);
     }
     private Object executeNode(WorkflowNodeEntity node,Object input,Object trigger,Map<String,Object> contextParams,Map<String,Object> nodeContext){Map<String,Object> c=workflowService.parseConfig(node);String inputText=toText(input);return switch(node.getNodeType()){
@@ -123,6 +123,8 @@ public class WorkflowEngine {
         return r;
     }
     private String toText(Object value){if(value==null)return "";if(value instanceof String s)return s;try{return mapper.writeValueAsString(value);}catch(Exception e){return String.valueOf(value);}}
+    // 空结果判定：null / 空字符串 / 空列表 / {columns,rows} 且 rows 为空
+    private boolean isEmptyOutput(Object output){if(output==null)return true;if(output instanceof String s)return s.trim().isEmpty();if(output instanceof Collection<?> c)return c.isEmpty();if(output instanceof Map<?,?> m){Object rows=m.get("rows");return rows==null||(rows instanceof Collection<?> c&&c.isEmpty());}return false;}
     private String shortText(Object value){String s=toText(value);return s.length()>500?s.substring(0,500)+"…":s;}private String str(Object o){return o==null?null:String.valueOf(o);}
     public record ExecutionResult(Object output,String logs,Map<String,Object> nodeResults){}
 }
