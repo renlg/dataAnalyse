@@ -62,9 +62,13 @@ public class WorkflowEngine {
         try{
             Map<String,Object> context=new LinkedHashMap<>();context.put("input",input);context.put("params",params==null?Map.of():params);context.put("context",nodeContext==null?Map.of():nodeContext);
             String contextJson=mapper.writeValueAsString(context);
-            String script="import json, sys\nctx = json.loads(sys.argv[1])\ninput = ctx.get('input')\nparams = ctx.get('params', {})\nnodeContext = ctx.get('context', {})\n"+code;
+            // 上下文通过 stdin 传（不再作为命令行参数——Linux 单参数上限 128KB，大 JSON 会 Argument list too long）
+            // 前缀：argv 不足时从 stdin 读，保持既有节点代码 `json.loads(sys.argv[1])` 完全兼容
+            String script="import json, sys\nif len(sys.argv) < 2:\n    sys.argv.append(sys.stdin.read())\nctx = json.loads(sys.argv[1])\ninput = ctx.get('input')\nparams = ctx.get('params', {})\nnodeContext = ctx.get('context', {})\n"+code;
             stdout=Files.createTempFile("dataanalyse-python-",".out");stderr=Files.createTempFile("dataanalyse-python-",".err");
-            process=new ProcessBuilder("python3","-c",script,contextJson).redirectOutput(stdout.toFile()).redirectError(stderr.toFile()).start();
+            process=new ProcessBuilder("python3","-c",script).redirectOutput(stdout.toFile()).redirectError(stderr.toFile()).start();
+            // 先同步写完 stdin 再 waitFor：管道缓冲 64KB，超大数据也先落盘（子进程 stdin 读完整份才跑），避免死锁
+            try(java.io.OutputStream os=process.getOutputStream()){os.write(contextJson.getBytes(StandardCharsets.UTF_8));}
             if(!process.waitFor(30,TimeUnit.SECONDS)){
                 process.destroyForcibly();process.waitFor(5,TimeUnit.SECONDS);
                 throw new BusinessException(500,"Python 执行超时（30 秒）");
