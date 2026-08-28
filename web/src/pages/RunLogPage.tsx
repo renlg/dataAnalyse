@@ -23,6 +23,9 @@ export default function RunLogPage() {
   const [cleaning, setCleaning] = useState(false)
   const [detail, setDetail] = useState<RunItem | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(20)
+  const [total, setTotal] = useState(0)
 
   const openDetail = async (r: RunItem) => {
     setDetailLoading(true)
@@ -34,17 +37,21 @@ export default function RunLogPage() {
     setDetailLoading(false)
   }
 
-  const load = async () => {
+  const load = async (p?: number, s?: number) => {
     setLoading(true)
+    const curP = p ?? page
+    const curS = s ?? pageSize
     try {
-      const data = await workflowApi.listRuns(wf)
-      setRuns(data)
+      const data = await workflowApi.listRuns(wf, curP, curS)
+      setRuns(data.list)
+      setTotal(data.total)
     } catch (e) { message.error((e as Error).message) }
     setLoading(false)
   }
 
   useEffect(() => { workflowApi.list().then(setFlows).catch(() => {}) }, [])
-  useEffect(() => { load() }, [wf])
+  useEffect(() => { setPage(0); load(0, pageSize) }, [wf])
+  useEffect(() => { load() }, [page, pageSize])
 
   const cleanupZombies = async () => {
     setCleaning(true)
@@ -83,10 +90,10 @@ export default function RunLogPage() {
           <Popconfirm title="清理僵尸运行记录" description="将超过 30 分钟且当前无活动任务的运行中记录标记为失败，是否继续？" onConfirm={cleanupZombies} okText="清理" cancelText="取消">
             <Button danger icon={<ClearOutlined />} loading={cleaning}>清理僵尸</Button>
           </Popconfirm>
-          <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>刷新</Button>
+          <Button icon={<ReloadOutlined />} onClick={() => load()} loading={loading}>刷新</Button>
         </Space>
       </div>
-      <Table size="small" rowKey="id" loading={loading} columns={columns} dataSource={runs} pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (t: number) => `共 ${t} 条` }} />
+      <Table size="small" rowKey="id" loading={loading} columns={columns} dataSource={runs} pagination={{ current: page + 1, pageSize, total, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (t: number) => `共 ${t} 条`, onChange: (p, s) => { setPage(p - 1); setPageSize(s) } }} />
       <Drawer title={`运行详情 #${detail?.id ?? ''}${detail?.workflowName ? ' · ' + detail.workflowName : ''}`} width={720} open={!!detail} onClose={() => setDetail(null)}>
         {detail && detailLoading ? <Spin /> : detail && (
           <>

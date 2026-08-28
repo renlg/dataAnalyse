@@ -5,10 +5,15 @@ import com.dataanalyse.workflow.entity.*;
 import com.dataanalyse.workflow.repo.*;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.scheduling.support.CronExpression;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 public class WorkflowService {
@@ -48,12 +53,21 @@ public class WorkflowService {
             return out;
         }catch(Exception e){return List.of();}
     }
-    public List<Map<String,Object>> getRuns(Long id){getEntity(id);return runs.findByWorkflowIdOrderByStartedAtDesc(id).stream().map(r -> runView(r, false)).toList();}
-    public List<Map<String,Object>> listRuns(Long workflowId){
-        List<WorkflowRunEntity> all = workflowId==null ? runs.findAllByOrderByStartedAtDesc() : runs.findByWorkflowIdOrderByStartedAtDesc(workflowId);
-        return all.stream().map(r -> runView(r, false)).toList();
+    public List<Map<String,Object>> getRuns(Long id){getEntity(id);List<WorkflowRunEntity> entities=runs.findByWorkflowIdOrderByStartedAtDesc(id);Map<Long,String> nameMap=batchNames(entities.stream().map(WorkflowRunEntity::getWorkflowId).collect(Collectors.toSet()));return entities.stream().map(r -> runView(r, false, nameMap)).toList();}
+    public Map<String,Object> listRuns(Long workflowId, int page, int size){
+        PageRequest pageRequest=PageRequest.of(page,size,Sort.by(Sort.Direction.DESC,"startedAt"));
+        Page<WorkflowRunEntity> pageResult=workflowId==null?runs.findAll(pageRequest):runs.findByWorkflowId(workflowId,pageRequest);
+        Set<Long> wfIds=pageResult.getContent().stream().map(WorkflowRunEntity::getWorkflowId).collect(Collectors.toSet());
+        Map<Long,String> nameMap=batchNames(wfIds);
+        List<Map<String,Object>> list=pageResult.getContent().stream().map(r -> runView(r, false, nameMap)).toList();
+        Map<String,Object> result=new LinkedHashMap<>();
+        result.put("list",list);
+        result.put("total",pageResult.getTotalElements());
+        result.put("page",page);
+        result.put("size",size);
+        return result;
     }
-    public Map<String,Object> getRun(Long id){return runView(runs.findById(id).orElseThrow(()->new BusinessException(404,"运行记录不存在")), true);}
+    public Map<String,Object> getRun(Long id){WorkflowRunEntity r=runs.findById(id).orElseThrow(()->new BusinessException(404,"运行记录不存在"));Map<Long,String> nameMap=batchNames(Set.of(r.getWorkflowId()));return runView(r, true, nameMap);}
     public WorkflowEntity getEntity(Long id){return workflows.findById(id).orElseThrow(()->new BusinessException(404,"工作流不存在"));}
     public Map<String,Object> parseConfig(WorkflowNodeEntity n){try{return mapper.readValue(Optional.ofNullable(n.getConfigJson()).orElse("{}"),new TypeReference<>(){});}catch(Exception e){throw new BusinessException(500,"节点配置解析失败");}}
     public Map<String,Object> getWorkflowConfig(Long id){return workflowConfig(getEntity(id));}
@@ -63,7 +77,8 @@ public class WorkflowService {
     private int parseConcurrency(Object value){if(value==null)return WorkflowExecutorManager.DEFAULT_CONCURRENCY;try{int concurrency=Integer.parseInt(String.valueOf(value));if(concurrency<1)throw new BusinessException(400,"工作流并发数必须大于 0");return concurrency;}catch(BusinessException e){throw e;}catch(Exception e){throw new BusinessException(400,"工作流并发数必须是正整数");}}
     private Map<String,Object> summary(WorkflowEntity w){Map<String,Object> m=new LinkedHashMap<>();m.put("id",w.getId());m.put("name",w.getName());m.put("status",w.getStatus());m.put("nodeCount",getNodeEntities(w.getId()).size());m.put("createdAt",w.getCreatedAt());m.put("updatedAt",w.getUpdatedAt());return m;}
     private Map<String,Object> nodeView(WorkflowNodeEntity n){Map<String,Object> m=new LinkedHashMap<>();m.put("id",n.getId());m.put("nodeKey",n.getNodeKey());m.put("nodeType",n.getNodeType());m.put("name",n.getName());m.put("positionX",n.getPositionX());m.put("positionY",n.getPositionY());m.put("config",parseConfig(n));return m;}
-    private Map<String,Object> runView(WorkflowRunEntity r, boolean includeDetails){Map<String,Object> m=new LinkedHashMap<>();m.put("id",r.getId());m.put("workflowId",r.getWorkflowId());m.put("workflowName",workflows.findById(r.getWorkflowId()).map(WorkflowEntity::getName).orElse(null));m.put("status",r.getStatus());m.put("startedAt",r.getStartedAt());m.put("finishedAt",r.getFinishedAt());m.put("logs",r.getLogs());m.put("nodeResults",includeDetails?nodeResultsView(r):null);return m;}
+    private Map<String,Object> runView(WorkflowRunEntity r, boolean includeDetails, Map<Long,String> nameMap){Map<String,Object> m=new LinkedHashMap<>();m.put("id",r.getId());m.put("workflowId",r.getWorkflowId());m.put("workflowName",nameMap.getOrDefault(r.getWorkflowId(),null));m.put("status",r.getStatus());m.put("startedAt",r.getStartedAt());m.put("finishedAt",r.getFinishedAt());m.put("logs",includeDetails?r.getLogs():null);m.put("nodeResults",includeDetails?nodeResultsView(r):null);return m;}
+    private Map<Long,String> batchNames(Collection<Long> ids){if(ids==null||ids.isEmpty())return Map.of();return workflows.findNamesByIds(ids).stream().collect(Collectors.toMap(row->(Long)row[0],row->(String)row[1],(a,b)->a));}
     /** 解析运行时的节点结果(nodeKey->output), 补上节点名/类型, 供前端表格展示 */
     private List<Map<String,Object>> nodeResultsView(WorkflowRunEntity r){
         List<Map<String,Object>> list=new ArrayList<>();
