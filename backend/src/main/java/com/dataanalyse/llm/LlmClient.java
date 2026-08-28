@@ -12,7 +12,8 @@ public class LlmClient {
     @SuppressWarnings("unchecked")
     public String chat(String baseUrl,String apiKey,String model,List<Map<String,String>> messages){
         if(baseUrl==null||baseUrl.isBlank()||model==null||model.isBlank()) throw new BusinessException(400,"模型地址和模型名称不能为空");
-        String url=baseUrl.replaceAll("/+$","")+"/v1/chat/completions";
+        String trimmed=baseUrl.replaceAll("/+$","");
+        String url=trimmed.endsWith("/v1")?trimmed+"/chat/completions":trimmed+"/v1/chat/completions";
         try {
             Map<String,Object> response=client.post().uri(url).contentType(MediaType.APPLICATION_JSON)
                     .headers(h->{if(apiKey!=null&&!apiKey.isBlank())h.setBearerAuth(apiKey);})
