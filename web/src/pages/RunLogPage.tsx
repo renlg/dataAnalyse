@@ -86,7 +86,7 @@ export default function RunLogPage() {
           <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>刷新</Button>
         </Space>
       </div>
-      <Table size="small" rowKey="id" loading={loading} columns={columns} dataSource={runs} pagination={{ pageSize: 20, showTotal: (t: number) => `共 ${t} 条` }} />
+      <Table size="small" rowKey="id" loading={loading} columns={columns} dataSource={runs} pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (t: number) => `共 ${t} 条` }} />
       <Drawer title={`运行详情 #${detail?.id ?? ''}${detail?.workflowName ? ' · ' + detail.workflowName : ''}`} width={720} open={!!detail} onClose={() => setDetail(null)}>
         {detail && detailLoading ? <Spin /> : detail && (
           <>
