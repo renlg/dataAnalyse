@@ -8,6 +8,7 @@ import WorkflowEditorPage from './pages/WorkflowEditorPage'
 import LoginPage from './pages/LoginPage'
 import ApiKeyPage from './pages/ApiKeyPage'
 import RunLogPage from './pages/RunLogPage'
+import WorkflowMonitorPage from './pages/WorkflowMonitorPage'
 import { authApi } from './api'
 
 export default function App() {
@@ -18,6 +19,10 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState('')
 
   useEffect(() => {
+    if (/^\/monitor\/\d+$/.test(location.pathname)) {
+      setAuthChecked(true)
+      return
+    }
     const token = localStorage.getItem('authToken')
     if (!token) {
       if (location.pathname !== '/login') nav('/login')
@@ -41,6 +46,10 @@ export default function App() {
     localStorage.removeItem('authToken')
     message.success('已退出登录')
     nav('/login')
+  }
+
+  if (/^\/monitor\/\d+$/.test(location.pathname)) {
+    return <Routes><Route path="/monitor/:workflowId" element={<WorkflowMonitorPage />} /><Route path="*" element={<Navigate to="/login" />} /></Routes>
   }
 
   if (!authChecked) return <div className="editor-loading">加载中...</div>
