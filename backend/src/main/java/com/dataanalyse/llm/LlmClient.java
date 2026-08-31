@@ -2,13 +2,22 @@ package com.dataanalyse.llm;
 
 import com.dataanalyse.common.BusinessException;
 import org.springframework.http.*;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.*;
 
 @Component
 public class LlmClient {
-    private final RestClient client=RestClient.create();
+    private final RestClient client;
+    public LlmClient(){
+        // 连接超时 10s + 读取超时 60s：防止上游挂起时 run 永远 running
+        JdkClientHttpRequestFactory factory=new JdkClientHttpRequestFactory(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build());
+        factory.setReadTimeout(Duration.ofSeconds(60));
+        this.client=RestClient.builder().requestFactory(factory).build();
+    }
     @SuppressWarnings("unchecked")
     public String chat(String baseUrl,String apiKey,String model,List<Map<String,String>> messages){
         if(baseUrl==null||baseUrl.isBlank()||model==null||model.isBlank()) throw new BusinessException(400,"模型地址和模型名称不能为空");
