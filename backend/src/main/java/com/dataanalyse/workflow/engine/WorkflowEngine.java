@@ -60,11 +60,14 @@ public class WorkflowEngine {
         if(code==null||code.isBlank())throw new BusinessException(400,"Python 代码不能为空");
         Path stdout=null,stderr=null;Process process=null;
         try{
-            Map<String,Object> context=new LinkedHashMap<>();context.put("input",input);context.put("params",params==null?Map.of():params);context.put("context",nodeContext==null?Map.of():nodeContext);
-            String contextJson=mapper.writeValueAsString(context);
+            Map<String,Object> safeParams=params==null?Map.of():params,safeNodeContext=nodeContext==null?Map.of():nodeContext;
+            Map<String,Object> combinedContext=new LinkedHashMap<>(safeParams);combinedContext.putAll(safeNodeContext);
+            Map<String,Object> payload=new LinkedHashMap<>();payload.put("input",input);payload.put("params",safeParams);payload.put("contextParams",safeParams);payload.put("context",combinedContext);payload.put("nodeContext",safeNodeContext);
+            String contextJson=mapper.writeValueAsString(payload);
             // 上下文通过 stdin 传（不再作为命令行参数——Linux 单参数上限 128KB，大 JSON 会 Argument list too long）
             // 前缀：argv 不足时从 stdin 读，保持既有节点代码 `json.loads(sys.argv[1])` 完全兼容
-            String script="import json, sys\nif len(sys.argv) < 2:\n    sys.argv.append(sys.stdin.read())\nctx = json.loads(sys.argv[1])\ninput = ctx.get('input')\nparams = ctx.get('params', {})\nnodeContext = ctx.get('context', {})\n"+code;
+            // Python 时间窗口示例：digest_date = params.get('digestDate'); start/end 同理；为空时由节点代码执行原默认时间计算。
+            String script="import json, sys\nif len(sys.argv) < 2:\n    sys.argv.append(sys.stdin.read())\nctx = json.loads(sys.argv[1])\ninput = ctx.get('input')\nparams = ctx.get('params', {})\ncontextParams = ctx.get('contextParams', params)\ncontext = ctx.get('context', {})\nnodeContext = ctx.get('nodeContext', {})\n"+code;
             stdout=Files.createTempFile("dataanalyse-python-",".out");stderr=Files.createTempFile("dataanalyse-python-",".err");
             process=new ProcessBuilder("python3","-c",script).redirectOutput(stdout.toFile()).redirectError(stderr.toFile()).start();
             // 先同步写完 stdin 再 waitFor：管道缓冲 64KB，超大数据也先落盘（子进程 stdin 读完整份才跑），避免死锁

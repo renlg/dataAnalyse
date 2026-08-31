@@ -19,6 +19,7 @@
 - **taiwei 节点**：通过 OpenAI 兼容协议调用 taiwei 智能体
 - **LLM 节点**：通过 OpenAI 协议调用大模型
 - **H2SQL / SQLiteSQL 节点**：配置 SQL 语句执行（H2 / SQLite 数据源）
+- **单次运行上下文参数**：普通运行保持原行为，也可传入 JSON 参数并在节点中用 `${参数名}` 引用
 
 ## 技术栈
 
@@ -52,5 +53,23 @@ npm run dev                # 默认 http://localhost:5173（代理 /api 到 8080
 | LLM | 调用大模型 | baseUrl / apiKey / model / system / user |
 | H2SQL | 执行 H2 SQL | 数据源 + SQL 语句 |
 | SQLiteSQL | 执行 SQLite SQL | 数据源 + SQL 语句 |
+| Python | 执行 Python 代码 | `input` / `params` / `contextParams` / `context` / `nodeContext` |
 
 节点输出可通过 `{{input}}` / `{{prev.output}}` 模板占位符在后续节点中引用。
+
+## 运行上下文参数与 Python 时间窗口
+
+`POST /api/workflows/{id}/run` 可不带 body（与原行为一致），也可传入单次运行参数：
+
+```json
+{"contextParams":{"digestDate":"2026-08-30"}}
+```
+
+单次运行参数会覆盖同名的流程默认参数。提示词、SQL、结束节点模板可用 `${digestDate}` 引用。Python 节点可直接读取 `params` 或 `contextParams`；`context` 是运行参数与前序节点结果的合并视图，`nodeContext` 只包含前序节点结果。例如时间窗口节点可先读取：
+
+```python
+digest_date = params.get("digestDate")
+start = params.get("start")
+end = params.get("end")
+# digest_date 或 start/end 为空时，再执行原有的 [昨天 9 点, 今天 9 点) 默认计算逻辑。
+```
