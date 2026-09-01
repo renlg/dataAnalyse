@@ -1,9 +1,10 @@
 import { Alert, Card, Collapse, Empty, Space, Spin, Table, Tag, Tooltip, Typography } from 'antd'
-import { useEffect, useMemo, useState } from 'react'
+import { ReactNode, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Background, Edge, Handle, Node, Position, ReactFlow, ReactFlowProvider } from '@xyflow/react'
+import { Background, Edge, Node, ReactFlow, ReactFlowProvider } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { MonitorInfo, MonitorNode, MonitorRun, monitorApi } from '../api'
+import WorkflowNode from '../components/workflow/WorkflowNode'
 
 const statusColor:Record<string,string>={success:'green',failed:'red',running:'blue'}
 const statusText:Record<string,string>={success:'成功',failed:'失败',running:'运行中'}
@@ -18,23 +19,18 @@ function configTooltip(node:MonitorNode){const config=node.configInfo;if(!config
   return null
 }
 
-type MonitorNodeData={nodeName:string;nodeType:string;statusClass:string;configContent:React.ReactNode}
-function MonitorFlowNode({data}:{data:MonitorNodeData}){
-  const content=<div className={`monitor-node ${data.statusClass}`}>
-    <Handle type="target" position={Position.Left} style={{opacity:0,pointerEvents:'none'}}/>
-    <Typography.Text strong>{data.nodeName}</Typography.Text>
-    <Tag>{data.nodeType}</Tag>
-    <Handle type="source" position={Position.Right} style={{opacity:0,pointerEvents:'none'}}/>
-  </div>
-  return data.configContent?<Tooltip title={data.configContent} overlayClassName="monitor-config-tooltip" placement="right">{content}</Tooltip>:content
+type MonitorNodeData={nodeType:string;name:string;config:Record<string,unknown>;statusClass?:string;tooltipContent?:ReactNode}
+function WrappedWorkflowNode({data,...rest}:any){
+  const node=<WorkflowNode data={data} {...rest}/>
+  return data.tooltipContent?<Tooltip title={data.tooltipContent} overlayClassName="monitor-config-tooltip" placement="right">{node}</Tooltip>:node
 }
-const monitorNodeTypes={monitor:MonitorFlowNode}
+const workflowNodeTypes={workflow:WrappedWorkflowNode}
 
 function MonitorFlow({nodes,edges}:{nodes:Node<MonitorNodeData>[];edges:Edge[]}){
   return <ReactFlow
     nodes={nodes}
     edges={edges}
-    nodeTypes={monitorNodeTypes}
+    nodeTypes={workflowNodeTypes}
     nodesDraggable={false}
     nodesConnectable={false}
     elementsSelectable={false}
@@ -72,7 +68,7 @@ export default function WorkflowMonitorPage(){
       const failed=latest?.status==='failed'&&latest.failedNode===node.nodeName
       const passed=passedKeys.has(node.nodeKey)
       const statusClass=failed?'failed':passed?'passed':''
-      fn.push({id:node.nodeKey,type:'monitor',position:{x:node.positionX||0,y:node.positionY||0},data:{nodeName:node.nodeName,nodeType:node.nodeType,statusClass,configContent:configTooltip(node)}})
+      fn.push({id:node.nodeKey,type:'workflow',position:{x:node.positionX||0,y:node.positionY||0},data:{nodeType:node.nodeType,name:node.nodeName,config:{},statusClass:statusClass||undefined,tooltipContent:configTooltip(node)}})
       for(const target of node.outgoing??[]){fe.push({id:`${node.nodeKey}-${target}`,source:node.nodeKey,target})}
     }
     return {flowNodes:fn,flowEdges:fe}
