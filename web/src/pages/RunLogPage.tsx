@@ -102,6 +102,23 @@ export default function RunLogPage() {
               <Typography.Text type="secondary">开始：{detail.startedAt ? new Date(detail.startedAt).toLocaleString() : '-'}</Typography.Text>
               {detail.finishedAt && <Typography.Text type="secondary">结束：{new Date(detail.finishedAt).toLocaleString()}</Typography.Text>}
             </Space>
+            {detail.logs && (
+              <div style={{ marginBottom: 16 }}>
+                <Typography.Title level={5} style={{ marginBottom: 8 }}>运行日志</Typography.Title>
+                <pre style={{
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-all',
+                  maxHeight: 300,
+                  overflow: 'auto',
+                  background: detail.status === 'failed' ? '#fff1f0' : '#f6f8fa',
+                  padding: 12,
+                  borderRadius: 6,
+                  fontSize: 12,
+                  margin: 0,
+                  color: detail.status === 'failed' ? '#cf1322' : undefined,
+                }}>{detail.logs}</pre>
+              </div>
+            )}
             {detailRows.length === 0 ? <Empty description="该运行没有节点结果" /> : (
               <Table
                 size="small" rowKey="key" dataSource={detailRows} pagination={false}
