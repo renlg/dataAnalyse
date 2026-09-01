@@ -121,9 +121,9 @@ public class WorkflowService {
     /** 解析运行时的节点结果(nodeKey->output), 补上节点名/类型, 供前端表格展示 */
     private List<Map<String,Object>> nodeResultsView(WorkflowRunEntity r){
         List<Map<String,Object>> list=new ArrayList<>();
+        Map<String,WorkflowNodeEntity> nodeMap=getNodeEntities(r.getWorkflowId()).stream().collect(java.util.stream.Collectors.toMap(WorkflowNodeEntity::getNodeKey,(WorkflowNodeEntity n)->n,(a,b)->a));
         if(r.getNodeResults()==null||r.getNodeResults().isBlank()) {} else {
         try{
-            Map<String,WorkflowNodeEntity> nodeMap=getNodeEntities(r.getWorkflowId()).stream().collect(java.util.stream.Collectors.toMap(WorkflowNodeEntity::getNodeKey,(WorkflowNodeEntity n)->n,(a,b)->a));
             @SuppressWarnings("unchecked") Map<String,Object> raw=mapper.readValue(r.getNodeResults(),new TypeReference<Map<String,Object>>(){});
             for(Map.Entry<String,Object> e:raw.entrySet()){
                 WorkflowNodeEntity node=nodeMap.get(e.getKey());
@@ -138,12 +138,16 @@ public class WorkflowService {
         }
         Failure f=failure(r);
         if(f.failedNode()!=null){
-            boolean already=list.stream().anyMatch(row->f.failedNode().equals(row.get("nodeKey")));
+            boolean already=list.stream().anyMatch(row->f.failedNode().equals(row.get("nodeName")));
             if(!already){
+                String failedKey=null,failedType=null;
+                for(Map.Entry<String,WorkflowNodeEntity> e:nodeMap.entrySet()){
+                    if(e.getValue().getName()!=null&&e.getValue().getName().equals(f.failedNode())){failedKey=e.getKey();failedType=e.getValue().getNodeType();break;}
+                }
                 Map<String,Object> nodeInfo=new LinkedHashMap<>();
-                nodeInfo.put("nodeKey",f.failedNode());
+                nodeInfo.put("nodeKey",failedKey!=null?failedKey:f.failedNode());
                 nodeInfo.put("nodeName",f.failedNode());
-                nodeInfo.put("nodeType",null);
+                nodeInfo.put("nodeType",failedType);
                 nodeInfo.put("output",null);
                 nodeInfo.put("error",f.error());
                 list.add(nodeInfo);

@@ -106,7 +106,7 @@ export default function WorkflowMonitorPage(){
       <Card title="节点执行状态" className="monitor-nodes" styles={{body:{padding:0}}}>
         {!flowNodes.length?<Empty description="该工作流暂无节点" style={{padding:24}}/>:<div className="monitor-flow-wrapper"><ReactFlowProvider><MonitorFlow nodes={flowNodes} edges={flowEdges}/></ReactFlowProvider></div>}
       </Card>
-      <Card title="执行记录" className="monitor-runs">
+      <Card title={<Space>执行记录{latest&&<><Tag color={statusColor[latest.status]||'default'}>{statusText[latest.status]||latest.status}</Tag></>}</Space>} className="monitor-runs">
         {!runs.length?<Empty description="暂无执行记录"/>:<div className="monitor-run-list">{runs.map(run=><div key={run.id} className="monitor-run-item">
           <div className="monitor-run-header"><Space><Typography.Text strong>执行 #{run.id}</Typography.Text><Tag color={statusColor[run.status]||'default'}>{statusText[run.status]||run.status}</Tag></Space><Typography.Text type="secondary">{time(run.startedAt)}{run.finishedAt?` 至 ${time(run.finishedAt)}`:''}</Typography.Text></div>
           {run.status==='failed'&&<Alert type="error" showIcon message={run.failedNode?`失败节点：${run.failedNode}`:'工作流执行失败'} description={run.error||'未记录失败原因'} style={{marginTop:12}}/>}
