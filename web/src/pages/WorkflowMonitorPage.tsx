@@ -3,7 +3,7 @@ import { ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Background, Edge, Node, ReactFlow, ReactFlowProvider } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { MonitorInfo, MonitorNode, MonitorRun, monitorApi, workflowApi } from '../api'
+import { MonitorInfo, MonitorNode, MonitorRun, monitorApi } from '../api'
 import WorkflowNode from '../components/workflow/WorkflowNode'
 
 const statusColor:Record<string,string>={success:'green',failed:'red',running:'blue'}
@@ -54,8 +54,6 @@ export default function WorkflowMonitorPage(){
   const historyPage=useRef(0)
   const [loading,setLoading]=useState(true)
   const [error,setError]=useState('')
-  const [reloadTick,setReloadTick]=useState(0)
-  const [toggling,setToggling]=useState(false)
 
   useEffect(()=>{
     let active=true
@@ -68,16 +66,7 @@ export default function WorkflowMonitorPage(){
       }catch(e){if(active)setError((e as Error).message)}finally{if(active)setLoading(false)}
     }
     refresh();const timer=window.setInterval(refresh,4000);return()=>{active=false;window.clearInterval(timer)}
-  },[workflowId,reloadTick])
-
-  const enableMonitor=async()=>{
-    setToggling(true)
-    try{
-      const detail=await workflowApi.detail(workflowId)
-      await workflowApi.update(workflowId,{name:detail.name,description:detail.description,status:detail.status,config:{...(detail.config??{}),monitorEnabled:true}})
-      setReloadTick(t=>t+1)
-    }catch(e){setError((e as Error).message)}finally{setToggling(false)}
-  }
+  },[workflowId])
 
   const loadHistory=async()=>{
     if(historyLoading||!hasMore)return
@@ -105,7 +94,7 @@ export default function WorkflowMonitorPage(){
 
   if(loading)return <div className="editor-loading"><Spin size="large"/></div>
   const monitorNotEnabled = error.includes('未开启实时执行过程')
-  if(error&&!info)return <div className="monitor-page">{monitorNotEnabled?<Alert type="info" showIcon message="该工作流未开启实时执行过程" description="点击下方按钮开启后即可查看实时执行过程。" action={<Button size="small" type="primary" loading={toggling} onClick={enableMonitor}>开启监控</Button>}/>:<Alert type="error" showIcon message="无法查看执行过程" description={error}/>}</div>
+  if(error&&!info)return <div className="monitor-page">{monitorNotEnabled?<Alert type="info" showIcon message="该工作流未开启实时执行过程" description="请在数据分析列表页，打开对应工作流「监控」按钮旁的开关后即可查看。"/>:<Alert type="error" showIcon message="无法查看执行过程" description={error}/>}</div>
   return <div className="monitor-page">
     {error&&<Alert type="warning" showIcon message="刷新失败，页面将继续自动重试" description={error} style={{marginBottom:16}}/>}
     <Card className="monitor-summary">
