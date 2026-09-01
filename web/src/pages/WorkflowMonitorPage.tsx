@@ -1,6 +1,8 @@
 import { Alert, Card, Collapse, Empty, Space, Spin, Table, Tag, Tooltip, Typography } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
+import { Background, Edge, Handle, Node, Position, ReactFlow, ReactFlowProvider } from '@xyflow/react'
+import '@xyflow/react/dist/style.css'
 import { MonitorInfo, MonitorNode, MonitorRun, monitorApi } from '../api'
 
 const statusColor:Record<string,string>={success:'green',failed:'red',running:'blue'}
@@ -14,6 +16,36 @@ function configTooltip(node:MonitorNode){const config=node.configInfo;if(!config
   if(node.nodeType==='llm'&&(config.systemPrompt||config.userPrompt))return <div><div className="monitor-config-title">系统提示词</div><pre className="monitor-config-text">{config.systemPrompt||'未配置'}</pre><div className="monitor-config-title monitor-config-section">用户提示词</div><pre className="monitor-config-text">{config.userPrompt||'未配置'}</pre></div>
   if(node.nodeType==='taiwei'&&config.prompt)return <div><div className="monitor-config-title">提示词</div><pre className="monitor-config-text">{config.prompt}</pre></div>
   return null
+}
+
+type MonitorNodeData={nodeName:string;nodeType:string;statusClass:string;configContent:React.ReactNode}
+function MonitorFlowNode({data}:{data:MonitorNodeData}){
+  const content=<div className={`monitor-node ${data.statusClass}`}>
+    <Handle type="target" position={Position.Left} style={{opacity:0,pointerEvents:'none'}}/>
+    <Typography.Text strong>{data.nodeName}</Typography.Text>
+    <Tag>{data.nodeType}</Tag>
+    <Handle type="source" position={Position.Right} style={{opacity:0,pointerEvents:'none'}}/>
+  </div>
+  return data.configContent?<Tooltip title={data.configContent} overlayClassName="monitor-config-tooltip" placement="right">{content}</Tooltip>:content
+}
+const monitorNodeTypes={monitor:MonitorFlowNode}
+
+function MonitorFlow({nodes,edges}:{nodes:Node<MonitorNodeData>[];edges:Edge[]}){
+  return <ReactFlow
+    nodes={nodes}
+    edges={edges}
+    nodeTypes={monitorNodeTypes}
+    nodesDraggable={false}
+    nodesConnectable={false}
+    elementsSelectable={false}
+    fitView
+    panOnDrag
+    zoomOnScroll
+    zoomOnPinch={false}
+    zoomOnDoubleClick={false}
+    minZoom={0.3}
+    maxZoom={1.5}
+  ><Background/></ReactFlow>
 }
 
 export default function WorkflowMonitorPage(){
@@ -32,8 +64,23 @@ export default function WorkflowMonitorPage(){
   const latest=runs[0]
   const passedKeys=useMemo(()=>new Set((latest?.nodeResults??[]).map(item=>item.nodeKey)),[latest])
 
+  const {flowNodes,flowEdges}=useMemo(()=>{
+    const nodeList=info?.nodes??[]
+    const fn:Node<MonitorNodeData>[]=[]
+    const fe:Edge[]=[]
+    for(const node of nodeList){
+      const failed=latest?.status==='failed'&&latest.failedNode===node.nodeName
+      const passed=passedKeys.has(node.nodeKey)
+      const statusClass=failed?'failed':passed?'passed':''
+      fn.push({id:node.nodeKey,type:'monitor',position:{x:node.positionX||0,y:node.positionY||0},data:{nodeName:node.nodeName,nodeType:node.nodeType,statusClass,configContent:configTooltip(node)}})
+      for(const target of node.outgoing??[]){fe.push({id:`${node.nodeKey}-${target}`,source:node.nodeKey,target})}
+    }
+    return {flowNodes:fn,flowEdges:fe}
+  },[info,latest,passedKeys])
+
   if(loading)return <div className="editor-loading"><Spin size="large"/></div>
-  if(error&&!info)return <div className="monitor-page"><Alert type="error" showIcon message="无法查看执行过程" description={error}/></div>
+  const monitorNotEnabled = error.includes('未开启实时执行过程')
+  if(error&&!info)return <div className="monitor-page">{monitorNotEnabled?<Alert type="info" showIcon message="该工作流未开启实时执行过程" description="请前往数据分析列表页，在对应工作流的操作栏中打开「实时执行过程」开关后即可查看。"/>:<Alert type="error" showIcon message="无法查看执行过程" description={error}/>}</div>
   return <div className="monitor-page">
     {error&&<Alert type="warning" showIcon message="刷新失败，页面将继续自动重试" description={error} style={{marginBottom:16}}/>}
     <Card className="monitor-summary">
@@ -42,8 +89,8 @@ export default function WorkflowMonitorPage(){
       <Space size="large" wrap style={{marginTop:16}}><Typography.Title level={3} style={{margin:0}}>{info?.workflowName??'工作流执行过程'}</Typography.Title><div><Typography.Text type="secondary">定时表达式：</Typography.Text>{info?.cron||'未启用定时执行'}</div></Space>
     </Card>
     <div className="monitor-content">
-      <Card title="节点执行状态" className="monitor-nodes">
-        {!info?.nodes.length?<Empty description="该工作流暂无节点"/>:<div className="monitor-node-list">{info.nodes.map(node=>{const failed=latest?.status==='failed'&&latest.failedNode===node.nodeName;const passed=passedKeys.has(node.nodeKey);const content=configTooltip(node);const item=<div key={node.nodeKey} className={`monitor-node ${failed?'failed':passed?'passed':''}`}><Typography.Text strong>{node.nodeName}</Typography.Text><Tag>{node.nodeType}</Tag></div>;return content?<Tooltip key={node.nodeKey} title={content} overlayClassName="monitor-config-tooltip" placement="right">{item}</Tooltip>:item})}</div>}
+      <Card title="节点执行状态" className="monitor-nodes" styles={{body:{padding:0}}}>
+        {!flowNodes.length?<Empty description="该工作流暂无节点" style={{padding:24}}/>:<div className="monitor-flow-wrapper"><ReactFlowProvider><MonitorFlow nodes={flowNodes} edges={flowEdges}/></ReactFlowProvider></div>}
       </Card>
       <Card title="执行记录" className="monitor-runs">
         {!runs.length?<Empty description="暂无执行记录"/>:<div className="monitor-run-list">{runs.map(run=><div key={run.id} className="monitor-run-item">

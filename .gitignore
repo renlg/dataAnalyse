@@ -7,3 +7,6 @@ web/vite.config.d.ts
 .DS_Store
 data/
 *.log
+
+# 部署脚本(本地用,不上传)
+deploy.sh

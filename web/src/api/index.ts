@@ -9,7 +9,7 @@ export interface WorkflowItem {id:number;name:string;description?:string;status:
 export interface WorkflowNodeDto {id?:number;nodeKey:string;nodeType:string;name:string;positionX:number;positionY:number;config:Record<string,unknown>}
 export interface RunItem {id:number;workflowId:number;workflowName?:string;status:string;startedAt:string;finishedAt?:string;logs?:string;nodeResults?:{nodeKey:string;nodeName:string;nodeType?:string;output:unknown}[]}
 export interface MonitorConfigInfo {sql?:string;conditions?:{target:string;targetName:string;condition?:string}[];systemPrompt?:string;userPrompt?:string;prompt?:string}
-export interface MonitorNode {nodeKey:string;nodeName:string;nodeType:string;configInfo?:MonitorConfigInfo|null}
+export interface MonitorNode {nodeKey:string;nodeName:string;nodeType:string;positionX:number;positionY:number;outgoing:string[];configInfo?:MonitorConfigInfo|null}
 export interface MonitorInfo {workflowName:string;monitorEnabled:boolean;cron?:string;nextFireTime?:string;nodes:MonitorNode[]}
 export interface MonitorRun {id:number;status:string;startedAt:string;finishedAt?:string;nodeResults:{nodeKey:string;nodeName:string;nodeType?:string;output:unknown}[];failedNode?:string;error?:string}
 export interface RunListResult {list:RunItem[];total:number;page:number;size:number}
