@@ -102,31 +102,15 @@ export default function RunLogPage() {
               <Typography.Text type="secondary">开始：{detail.startedAt ? new Date(detail.startedAt).toLocaleString() : '-'}</Typography.Text>
               {detail.finishedAt && <Typography.Text type="secondary">结束：{new Date(detail.finishedAt).toLocaleString()}</Typography.Text>}
             </Space>
-            {detail.logs && (
-              <div style={{ marginBottom: 16 }}>
-                <Typography.Title level={5} style={{ marginBottom: 8 }}>运行日志</Typography.Title>
-                <pre style={{
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-all',
-                  maxHeight: 300,
-                  overflow: 'auto',
-                  background: detail.status === 'failed' ? '#fff1f0' : '#f6f8fa',
-                  padding: 12,
-                  borderRadius: 6,
-                  fontSize: 12,
-                  margin: 0,
-                  color: detail.status === 'failed' ? '#cf1322' : undefined,
-                }}>{detail.logs}</pre>
-              </div>
-            )}
             {detailRows.length === 0 ? <Empty description="该运行没有节点结果" /> : (
               <Table
                 size="small" rowKey="key" dataSource={detailRows} pagination={false}
-                expandable={{ expandedRowRender: (r) => <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 300, overflow: 'auto', background: '#f6f8fa', padding: 12, borderRadius: 6, fontSize: 12 }}>{fmtOutput(r.output)}</pre> }}
+                rowClassName={(r) => r.error ? 'run-log-error-row' : ''}
+                expandable={{ expandedRowRender: (r) => r.error ? <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 300, overflow: 'auto', background: '#fff1f0', padding: 12, borderRadius: 6, fontSize: 12, color: '#cf1322' }}>{r.error}</pre> : <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 300, overflow: 'auto', background: '#f6f8fa', padding: 12, borderRadius: 6, fontSize: 12 }}>{fmtOutput(r.output)}</pre> }}
                 columns={[
-                  { title: '节点', dataIndex: 'nodeName', width: 110 },
-                  { title: '类型', dataIndex: 'nodeType', width: 80 },
-                  { title: '返回内容', dataIndex: 'output', ellipsis: true, render: (v: unknown) => <Typography.Text type="secondary" ellipsis={{ tooltip: fmtOutput(v) }} style={{ maxWidth: 420 }}>{fmtOutput(v)}</Typography.Text> },
+                  { title: '节点', dataIndex: 'nodeName', width: 110, render: (v: string, r) => r.error ? <Typography.Text style={{ color: '#cf1322' }}>{v}</Typography.Text> : v },
+                  { title: '类型', dataIndex: 'nodeType', width: 80, render: (v: string) => v || '-' },
+                  { title: '返回内容', dataIndex: 'output', ellipsis: true, render: (v: unknown, r) => r.error ? <Typography.Text style={{ color: '#cf1322' }}>执行失败</Typography.Text> : <Typography.Text type="secondary" ellipsis={{ tooltip: fmtOutput(v) }} style={{ maxWidth: 420 }}>{fmtOutput(v)}</Typography.Text> },
                 ]}
               />
             )}

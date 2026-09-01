@@ -93,14 +93,14 @@ public class WorkflowService {
     private int parseConcurrency(Object value){if(value==null)return WorkflowExecutorManager.DEFAULT_CONCURRENCY;try{int concurrency=Integer.parseInt(String.valueOf(value));if(concurrency<1)throw new BusinessException(400,"工作流并发数必须大于 0");return concurrency;}catch(BusinessException e){throw e;}catch(Exception e){throw new BusinessException(400,"工作流并发数必须是正整数");}}
     private Map<String,Object> summary(WorkflowEntity w){Map<String,Object> m=new LinkedHashMap<>();m.put("id",w.getId());m.put("name",w.getName());m.put("status",w.getStatus());m.put("nodeCount",getNodeEntities(w.getId()).size());m.put("monitorEnabled",Boolean.TRUE.equals(parseWorkflowConfig(w).get("monitorEnabled")));m.put("createdAt",w.getCreatedAt());m.put("updatedAt",w.getUpdatedAt());return m;}
     private Map<String,Object> nodeView(WorkflowNodeEntity n){Map<String,Object> m=new LinkedHashMap<>();m.put("id",n.getId());m.put("nodeKey",n.getNodeKey());m.put("nodeType",n.getNodeType());m.put("name",n.getName());m.put("positionX",n.getPositionX());m.put("positionY",n.getPositionY());m.put("config",parseConfig(n));return m;}
-    private Map<String,Object> runView(WorkflowRunEntity r, boolean includeDetails, Map<Long,String> nameMap){Map<String,Object> m=new LinkedHashMap<>();m.put("id",r.getId());m.put("workflowId",r.getWorkflowId());m.put("workflowName",nameMap.getOrDefault(r.getWorkflowId(),null));m.put("status",r.getStatus());m.put("startedAt",r.getStartedAt());m.put("finishedAt",r.getFinishedAt());m.put("logs",includeDetails?r.getLogs():null);m.put("nodeResults",includeDetails?nodeResultsView(r):null);return m;}
+    private Map<String,Object> runView(WorkflowRunEntity r, boolean includeDetails, Map<Long,String> nameMap){Map<String,Object> m=new LinkedHashMap<>();m.put("id",r.getId());m.put("workflowId",r.getWorkflowId());m.put("workflowName",nameMap.getOrDefault(r.getWorkflowId(),null));m.put("status",r.getStatus());m.put("startedAt",r.getStartedAt());m.put("finishedAt",r.getFinishedAt());m.put("logs",includeDetails?r.getLogs():null);m.put("nodeResults",includeDetails?nodeResultsView(r):null);if(includeDetails){Failure f=failure(r);m.put("failedNode",f.failedNode());m.put("error",f.error());}return m;}
     private Map<String,Object> monitorRunView(WorkflowRunEntity r){Map<String,Object> m=new LinkedHashMap<>();m.put("id",r.getId());m.put("status",r.getStatus());m.put("startedAt",r.getStartedAt());m.put("finishedAt",r.getFinishedAt());m.put("nodeResults",nodeResultsView(r));Failure failure=failure(r);m.put("failedNode",failure.failedNode());m.put("error",failure.error());return m;}
     private Failure failure(WorkflowRunEntity run){if(!"failed".equals(run.getStatus()))return new Failure(null,null);String logs=Optional.ofNullable(run.getLogs()).orElse("");Matcher matcher=FAILED_NODE_PATTERN.matcher(logs);if(matcher.find())return new Failure(matcher.group(1),matcher.group(2).trim());return new Failure(null,logs.isBlank()?"工作流执行失败":logs);}
     private Map<Long,String> batchNames(Collection<Long> ids){if(ids==null||ids.isEmpty())return Map.of();return workflows.findNamesByIds(ids).stream().collect(Collectors.toMap(row->(Long)row[0],row->(String)row[1],(a,b)->a));}
     /** 解析运行时的节点结果(nodeKey->output), 补上节点名/类型, 供前端表格展示 */
     private List<Map<String,Object>> nodeResultsView(WorkflowRunEntity r){
         List<Map<String,Object>> list=new ArrayList<>();
-        if(r.getNodeResults()==null||r.getNodeResults().isBlank()) return list;
+        if(r.getNodeResults()==null||r.getNodeResults().isBlank()) {} else {
         try{
             Map<String,WorkflowNodeEntity> nodeMap=getNodeEntities(r.getWorkflowId()).stream().collect(java.util.stream.Collectors.toMap(WorkflowNodeEntity::getNodeKey,(WorkflowNodeEntity n)->n,(a,b)->a));
             @SuppressWarnings("unchecked") Map<String,Object> raw=mapper.readValue(r.getNodeResults(),new TypeReference<Map<String,Object>>(){});
@@ -114,6 +114,20 @@ public class WorkflowService {
                 list.add(row);
             }
         }catch(Exception ignored){}
+        }
+        Failure f=failure(r);
+        if(f.failedNode()!=null){
+            boolean already=list.stream().anyMatch(row->f.failedNode().equals(row.get("nodeKey")));
+            if(!already){
+                Map<String,Object> nodeInfo=new LinkedHashMap<>();
+                nodeInfo.put("nodeKey",f.failedNode());
+                nodeInfo.put("nodeName",f.failedNode());
+                nodeInfo.put("nodeType",null);
+                nodeInfo.put("output",null);
+                nodeInfo.put("error",f.error());
+                list.add(nodeInfo);
+            }
+        }
         return list;
     }
     private record Failure(String failedNode,String error){}
