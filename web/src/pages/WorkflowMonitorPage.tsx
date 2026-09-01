@@ -1,5 +1,5 @@
-import { Alert, Card, Collapse, Empty, Space, Spin, Table, Tag, Tooltip, Typography } from 'antd'
-import { ReactNode, useEffect, useMemo, useState } from 'react'
+import { Alert, Button, Card, Collapse, Empty, Space, Spin, Table, Tag, Tooltip, Typography } from 'antd'
+import { ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Background, Edge, Node, ReactFlow, ReactFlowProvider } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
@@ -47,17 +47,35 @@ function MonitorFlow({nodes,edges}:{nodes:Node<MonitorNodeData>[];edges:Edge[]})
 export default function WorkflowMonitorPage(){
   const workflowId=Number(useParams().workflowId)
   const [info,setInfo]=useState<MonitorInfo>()
-  const [runs,setRuns]=useState<MonitorRun[]>([])
+  const [recent,setRecent]=useState<MonitorRun[]>([])
+  const [history,setHistory]=useState<MonitorRun[]>([])
+  const [hasMore,setHasMore]=useState(false)
+  const [historyLoading,setHistoryLoading]=useState(false)
+  const historyPage=useRef(0)
   const [loading,setLoading]=useState(true)
   const [error,setError]=useState('')
 
   useEffect(()=>{
     let active=true
-    const refresh=async()=>{if(!Number.isFinite(workflowId)){setError('工作流编号不正确');setLoading(false);return}try{const [nextInfo,nextRuns]=await Promise.all([monitorApi.info(workflowId),monitorApi.runs(workflowId)]);if(active){setInfo(nextInfo);setRuns(nextRuns);setError('')}}catch(e){if(active){setInfo(undefined);setRuns([]);setError((e as Error).message)}}finally{if(active)setLoading(false)}}
+    historyPage.current=0;setInfo(undefined);setRecent([]);setHistory([]);setHasMore(false);setHistoryLoading(false);setLoading(true);setError('')
+    const refresh=async()=>{
+      if(!Number.isFinite(workflowId)){setError('工作流编号不正确');setLoading(false);return}
+      try{
+        const [nextInfo,nextRuns]=await Promise.all([monitorApi.info(workflowId),monitorApi.runs(workflowId,0)])
+        if(active){setInfo(nextInfo);setRecent(nextRuns.list);if(historyPage.current===0)setHasMore(nextRuns.hasMore);setError('')}
+      }catch(e){if(active)setError((e as Error).message)}finally{if(active)setLoading(false)}
+    }
     refresh();const timer=window.setInterval(refresh,4000);return()=>{active=false;window.clearInterval(timer)}
   },[workflowId])
 
-  const latest=runs[0]
+  const loadHistory=async()=>{
+    if(historyLoading||!hasMore)return
+    setHistoryLoading(true)
+    try{const nextPage=historyPage.current+1;const result=await monitorApi.runs(workflowId,nextPage);setHistory(current=>[...current,...result.list]);historyPage.current=nextPage;setHasMore(result.hasMore)}
+    catch(e){setError((e as Error).message)}finally{setHistoryLoading(false)}
+  }
+  const runs=[...recent,...history]
+  const latest=recent[0]
   const passedKeys=useMemo(()=>new Set((latest?.nodeResults??[]).map(item=>item.nodeKey)),[latest])
 
   const {flowNodes,flowEdges}=useMemo(()=>{
@@ -93,7 +111,7 @@ export default function WorkflowMonitorPage(){
           <div className="monitor-run-header"><Space><Typography.Text strong>执行 #{run.id}</Typography.Text><Tag color={statusColor[run.status]||'default'}>{statusText[run.status]||run.status}</Tag></Space><Typography.Text type="secondary">{time(run.startedAt)}{run.finishedAt?` 至 ${time(run.finishedAt)}`:''}</Typography.Text></div>
           {run.status==='failed'&&<Alert type="error" showIcon message={run.failedNode?`失败节点：${run.failedNode}`:'工作流执行失败'} description={run.error||'未记录失败原因'} style={{marginTop:12}}/>}
           <Collapse ghost size="small" items={[{key:'results',label:`出参信息（${run.nodeResults.length}）`,children:run.nodeResults.length?<Table size="small" rowKey="nodeKey" pagination={false} dataSource={run.nodeResults} columns={[{title:'节点',dataIndex:'nodeName',width:130},{title:'类型',dataIndex:'nodeType',width:90},{title:'出参',dataIndex:'output',render:(value:unknown)=><pre className="monitor-output">{outputText(value)}</pre>}]}/>:<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无节点出参"/>}]}/>
-        </div>)}</div>}
+        </div>)}{hasMore&&<div style={{textAlign:'center',paddingTop:16}}><Button loading={historyLoading} onClick={loadHistory}>{history.length?'加载更多':'加载历史记录'}</Button></div>}</div>}
       </Card>
     </div>
   </div>

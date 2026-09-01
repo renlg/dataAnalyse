@@ -15,6 +15,7 @@ public class PublicWorkflowMonitorController {
     private final WorkflowService service;private final WorkflowScheduler scheduler;
     public PublicWorkflowMonitorController(WorkflowService s,WorkflowScheduler w){service=s;scheduler=w;}
     @GetMapping("/{workflowId}/info") public ApiResult<?> info(@PathVariable Long workflowId){WorkflowEntity workflow=enabledWorkflow(workflowId);Map<String,Object> schedule=scheduler.info(workflowId);Map<String,Object> result=new LinkedHashMap<>();result.put("workflowName",workflow.getName());result.put("monitorEnabled",true);result.put("cron",schedule.get("cron"));result.put("nextFireTime",schedule.get("nextFireTime"));result.put("nodes",service.getPublicNodes(workflowId));return ApiResult.ok(result);}
-    @GetMapping("/{workflowId}/runs") public ApiResult<?> runs(@PathVariable Long workflowId,@RequestParam(defaultValue="20") int limit){enabledWorkflow(workflowId);return ApiResult.ok(service.getMonitorRuns(workflowId,limit));}
+    @GetMapping("/{workflowId}/runs")
+    public ApiResult<?> runs(@PathVariable Long workflowId,@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="20") int size){enabledWorkflow(workflowId);return ApiResult.ok(service.getMonitorRuns(workflowId,page,size));}
     private WorkflowEntity enabledWorkflow(Long workflowId){WorkflowEntity workflow=service.getEntity(workflowId);if(!service.isMonitorEnabled(workflowId))throw new BusinessException(404,"该工作流未开启实时执行过程");return workflow;}
 }

@@ -83,7 +83,28 @@ public class WorkflowService {
         case "taiwei" -> info.put("prompt",publicText(config.get("prompt")));
         default -> {return null;}
     }return info;}
-    public List<Map<String,Object>> getMonitorRuns(Long id,int limit){getEntity(id);if(limit<1||limit>100)throw new BusinessException(400,"执行记录条数必须在 1 到 100 之间");Page<WorkflowRunEntity> page=runs.findByWorkflowId(id,PageRequest.of(0,limit,Sort.by(Sort.Direction.DESC,"startedAt")));return page.getContent().stream().map(this::monitorRunView).toList();}
+    public Map<String,Object> getMonitorRuns(Long id,int page,int size){
+        getEntity(id);
+        if(page<0)throw new BusinessException(400,"执行记录页码不能小于 0");
+        if(size<1||size>100)throw new BusinessException(400,"执行记录条数必须在 1 到 100 之间");
+        List<WorkflowRunEntity> all=runs.findByWorkflowIdOrderByStartedAtDesc(id);
+        List<WorkflowRunEntity> completed=all.stream().filter(r->!"running".equals(r.getStatus())).toList();
+        List<WorkflowRunEntity> selected;
+        boolean hasMore;
+        if(page==0){
+            WorkflowRunEntity latestCompleted=completed.isEmpty()?null:completed.get(0);
+            selected=all.stream().filter(r->"running".equals(r.getStatus())||(latestCompleted!=null&&Objects.equals(r.getId(),latestCompleted.getId()))).toList();
+            hasMore=completed.size()>1;
+        }else{
+            long offset=(long)(page-1)*size+1;
+            if(offset>=completed.size()){selected=List.of();hasMore=false;}
+            else{int from=(int)offset;int to=Math.min(from+size,completed.size());selected=completed.subList(from,to);hasMore=to<completed.size();}
+        }
+        Map<String,Object> result=new LinkedHashMap<>();
+        result.put("list",selected.stream().map(this::monitorRunView).toList());
+        result.put("hasMore",hasMore);
+        return result;
+    }
     public WorkflowEntity getEntity(Long id){return workflows.findById(id).orElseThrow(()->new BusinessException(404,"工作流不存在"));}
     public Map<String,Object> parseConfig(WorkflowNodeEntity n){try{return mapper.readValue(Optional.ofNullable(n.getConfigJson()).orElse("{}"),new TypeReference<>(){});}catch(Exception e){throw new BusinessException(500,"节点配置解析失败");}}
     public Map<String,Object> getWorkflowConfig(Long id){return workflowConfig(getEntity(id));}
