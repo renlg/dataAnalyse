@@ -42,7 +42,7 @@ public class WorkflowEngine {
         case "taiwei" -> {Map<String,Object> rc=resolveLlmConfig(c);yield callLlmWithRetry(()->llm.chat(str(rc.get("baseUrl")),str(rc.get("apiKey")),str(rc.get("model")),List.of(Map.of("role","system","content",render(str(c.get("prompt")),inputText,contextParams,nodeContext)))),retryCount(c));}
         case "llm" -> {Map<String,Object> rc=resolveLlmConfig(c);yield callLlmWithRetry(()->llm.chat(str(rc.get("baseUrl")),str(rc.get("apiKey")),str(rc.get("model")),List.of(Map.of("role","system","content",render(str(c.get("systemPrompt")),inputText,contextParams,nodeContext)),Map.of("role","user","content",render(str(c.get("userPrompt")),inputText,contextParams,nodeContext)))),retryCount(c));}
         case "h2sql","sqlitesql" -> {Object ds=c.get("dataSourceId");if(ds==null)throw new BusinessException(400,"SQL 节点未选择数据源");yield dataSources.queryForWorkflow(Long.valueOf(String.valueOf(ds)),"h2sql".equals(node.getNodeType())?"h2":"sqlite",render(str(c.get("sql")),inputText,contextParams,nodeContext));}
-        case "python" -> executePython(str(c.get("code")),input,contextParams,nodeContext);
+        case "python" -> executePython(str(c.get("code")),input,contextParams,nodeContext,c);
         default -> throw new BusinessException(400,"未知节点类型");};}
     private String callLlmWithRetry(Supplier<String> call,int retryCount){
         for(int attempt=0;;attempt++){
@@ -58,8 +58,12 @@ public class WorkflowEngine {
         Object value=config.get("retryCount");if(value==null||String.valueOf(value).isBlank())return 3;
         try{int count=Integer.parseInt(String.valueOf(value));if(count<0)throw new NumberFormatException();return count;}catch(NumberFormatException e){throw new BusinessException(400,"重试次数必须是大于等于 0 的整数");}
     }
-    private Object executePython(String code,Object input,Map<String,Object> params,Map<String,Object> nodeContext){
+    private Object executePython(String code,Object input,Map<String,Object> params,Map<String,Object> nodeContext,Map<String,Object> config){
         if(code==null||code.isBlank())throw new BusinessException(400,"Python 代码不能为空");
+        int timeoutSeconds=30;
+        if(config!=null&&config.get("timeoutSeconds")!=null){
+            try{int t=Integer.parseInt(String.valueOf(config.get("timeoutSeconds")));if(t>0&&t<=3600)timeoutSeconds=t;}catch(NumberFormatException ignored){}
+        }
         Path stdout=null,stderr=null;Process process=null;
         try{
             Map<String,Object> safeParams=params==null?Map.of():params,safeNodeContext=nodeContext==null?Map.of():nodeContext;
@@ -74,9 +78,9 @@ public class WorkflowEngine {
             process=new ProcessBuilder("python3","-c",script).redirectOutput(stdout.toFile()).redirectError(stderr.toFile()).start();
             // 先同步写完 stdin 再 waitFor：管道缓冲 64KB，超大数据也先落盘（子进程 stdin 读完整份才跑），避免死锁
             try(java.io.OutputStream os=process.getOutputStream()){os.write(contextJson.getBytes(StandardCharsets.UTF_8));}
-            if(!process.waitFor(30,TimeUnit.SECONDS)){
+            if(!process.waitFor(timeoutSeconds,TimeUnit.SECONDS)){
                 process.destroyForcibly();process.waitFor(5,TimeUnit.SECONDS);
-                throw new BusinessException(500,"Python 执行超时（30 秒）");
+                throw new BusinessException(500,"Python 执行超时（"+timeoutSeconds+" 秒）");
             }
             String output=Files.readString(stdout,StandardCharsets.UTF_8).stripTrailing();
             String error=Files.readString(stderr,StandardCharsets.UTF_8).stripTrailing();
